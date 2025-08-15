@@ -1,0 +1,13 @@
+services:
+  monday-sync:
+    build: .
+    container_name: monday-sync
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./:/app
+      - ./data:/app/data
+      - ./config:/app/config
+    env_file:
+      - .env

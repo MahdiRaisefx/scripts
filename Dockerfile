@@ -1,34 +1,24 @@
-FROM node:20-alpine
+FROM node:20-slim
 
 ENV TZ=Etc/UTC \
     NODE_ENV=production
 
-# Add lightweight process utils
-RUN apk add --no-cache bash curl tini
+RUN apt-get update && \
+    apt-get install -y \
+    bash \
+    curl \
+    tini \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install pm2 for multi-process management in Docker
-RUN npm i -g pm2@latest
+RUN npm install -g pm2@latest
 
-# Create app directory
-WORKDIR /usr/src/app
+WORKDIR /app
 
-# Install dependencies first (better layer caching)
 COPY package*.json ./
 RUN npm ci --only=production
 
-# Copy source
 COPY . .
 
-# PM2 config
-COPY ecosystem.config.cjs ./ecosystem.config.cjs
+ENTRYPOINT ["/usr/bin/tini", "--"]
 
-# Copy env (or mount it at runtime; both work)
-# If you prefer mounting, delete the next line.
-COPY .env ./.env
-
-# Expose your API server port (server.js uses PORT, default 3002)
-EXPOSE 3002
-
-# Use tini as init, then pm2-runtime (Docker-friendly)
-ENTRYPOINT ["/sbin/tini", "--"]
-CMD ["pm2-runtime", "start", "ecosystem.config.cjs"]
+CMD ["pm2-runtime", "ecosystem.config.cjs"]
