@@ -202,7 +202,7 @@ async function processBoard({ name, boardId, transactionBoardId }) {
       // Safer than new Date('YYYY-MM-DDZ') which is not guaranteed to parse in all runtimes.
       sinceDateIsoZ = `${retentionDateCol.text}T00:00:00Z`;
     } else {
-      sinceDateIsoZ = "1970-01-01T00:00:00Z";
+      sinceDateIsoZ = "2025-08-14T00:00:00Z";
     }
 
     clientsForApiCall.push({
