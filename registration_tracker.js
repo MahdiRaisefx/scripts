@@ -12,8 +12,16 @@ const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL;
 const NEW_LEADS_BOARD = BOARD_CONFIG.find(
   (b) => b.name === "New Leads"
 )?.boardId;
-const NC_SALES_BOARD = BOARD_CONFIG.find((b) => b.name === "Nc sales")?.boardId;
+console.log(`New Leads Board ID: ${NEW_LEADS_BOARD}`);
+if (!NEW_LEADS_BOARD) {
+  console.error("New Leads board ID not found.");
+}
+const NC_SALES_BOARD = BOARD_CONFIG.find((b) => b.name === "Nc self")?.boardId;
 
+console.log(`Nc self Board ID: ${NC_SALES_BOARD}`);
+if (!NC_SALES_BOARD) {
+  console.error("Nc self board ID not found.");
+}
 // Color log helper
 function colorLog(level, msg) {
   const ts = new Date().toISOString();
@@ -54,7 +62,6 @@ async function mondayRequest(query, variables = {}) {
       },
     }
   );
-
   if (res.data.errors) throw new Error(JSON.stringify(res.data.errors));
   return res.data.data;
 }

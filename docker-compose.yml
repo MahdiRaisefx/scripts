@@ -1,13 +1,40 @@
 services:
-  monday-sync:
-    build: .
-    container_name: monday-sync
-    restart: unless-stopped
-    ports:
-      - "3002:3002"
+  registration_updater:
+    build:
+      context: .
+      dockerfile: Dockerfile.registration-updater
+    env_file: .env
     volumes:
-      - ./:/app
+      - registration_logs:/var/log/app
       - ./data:/app/data
       - ./config:/app/config
-    env_file:
-      - .env
+    restart: unless-stopped
+
+  sales_updater:
+    build:
+      context: .
+      dockerfile: Dockerfile.sales-updater
+    env_file: .env
+    volumes:
+      - sales_logs:/var/log/app
+      - ./data:/app/data
+      - ./config:/app/config
+    restart: unless-stopped
+
+  api_server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    env_file: .env
+    ports:
+      - "3000:3000"
+    volumes:
+      - api_logs:/var/log/app
+      - ./data:/app/data
+      - ./config:/app/config
+    restart: unless-stopped
+
+volumes:
+  registration_logs:
+  sales_logs:
+  api_logs:

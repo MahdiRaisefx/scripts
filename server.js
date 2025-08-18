@@ -10,8 +10,8 @@ const Joi = require("joi");
 const Bottleneck = require("bottleneck");
 
 // === Configuration ===
-const CELLXPERT_BASE_URL = "https://adminapi.cellxpert.com/";
-const CUSTOMER_API_URL = process.env.BACKEND_BASE_URL + "/email-by-id";
+const CELLXPERT_BASE_URL = "https://adminapi.cellxpert.com/"; // For all CellXpert API calls
+const EMAIL_LOOKUP_URL = process.env.BACKEND_BASE_URL + "/email-by-id"; // Only for email lookups
 const ADMIN_URL = "RaiseFX";
 const CONTENT_TYPE = "application/x-www-form-urlencoded";
 const PORT = process.env.PORT || 3000;
@@ -19,7 +19,7 @@ const PULL_INTERVAL_MIN = parseInt(process.env.PULL_INTERVAL_MINUTES, 10) || 15;
 const AFFILIATE_ID = process.env.AFFILIATE_ID;
 const REPORTS_API_KEY = process.env.REPORTS_API_KEY;
 
-// Vos tokens pour l’API customer
+// API tokens for email lookup
 const TOKENS = [
   "148286:NjXtMv0VDGfwDQMAYILHW8z9s1j8UEya",
   "148286:m0a4kDXnhm9BF09Q7CATiKjO5x6mKoM1",
@@ -43,7 +43,7 @@ const TOKENS = [
   "148286:eM2GjXUNh0DFDaoleBKQ6h7do7o13j1g",
 ];
 
-// Crée un limiter Bottleneck par token : max 60 requêtes par minute, 1 à la fois
+// Create rate limiters for email lookups
 const tokenLimiters = TOKENS.map((token) => ({
   token,
   limiter: new Bottleneck({
@@ -54,9 +54,9 @@ const tokenLimiters = TOKENS.map((token) => ({
   }),
 }));
 
-let rrIndex = 0; // pour le round-robin
+let rrIndex = 0; // Round-robin index for token rotation
 
-// === Fichiers et schéma ===
+// === File paths and schema ===
 const DATA_DIR = path.resolve(__dirname, "data");
 const DATA_FILE = path.join(DATA_DIR, "data.json");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
@@ -118,8 +118,7 @@ function pseudonymizeName(name) {
 }
 
 /**
- * Authentifie auprès de CellXpert et renvoie le token.
- * Logge uniquement en cas d’échec.
+ * Authenticate with CellXpert using CELLXPERT_BASE_URL
  */
 async function authenticate() {
   const qs = new URLSearchParams({
@@ -147,8 +146,7 @@ async function authenticate() {
 }
 
 /**
- * Récupère le rapport de registrations depuis CellXpert.
- * Logge uniquement en cas d’échec.
+ * Fetch registration report from CellXpert using CELLXPERT_BASE_URL
  */
 async function fetchRegistrationReport(token, startDate, endDate) {
   const url = CELLXPERT_BASE_URL;
@@ -205,9 +203,7 @@ function isRecordChanged(oldRec, newRec) {
 }
 
 /**
- * Récupère l’email pour un userId donné, en round-robin sur les tokens
- * et sous rate-limit Bottleneck. Log uniquement en cas d’erreur.
- * Ne change pas : on récupère l’email en clair.
+ * Fetch email using BACKEND_BASE_URL only
  */
 async function fetchEmail(userId) {
   const cleanId = userId.replace(/^.*?(\d+)$/, "$1");
@@ -218,12 +214,13 @@ async function fetchEmail(userId) {
   for (let i = 0; i < tokenLimiters.length; i++) {
     const idx = (rrIndex + i) % tokenLimiters.length;
     const { token, limiter } = tokenLimiters[idx];
-    const url = `${CUSTOMER_API_URL}?user_id=${cleanId}`;
+    const url = `${EMAIL_LOOKUP_URL}?user_id=${cleanId}`;
 
     try {
       const resp = await limiter.schedule(() =>
         axios.get(url, {
           headers: { "X-API-KEY": process.env.LEAD_EXPORT_API_KEY },
+          timeout: 5000,
         })
       );
       rrIndex = idx + 1;
@@ -294,13 +291,13 @@ function generateMockData(count = 10) {
 }
 
 /**
- * Récupère, merge et persiste les données + emails (hashés).
+ * Main function to fetch and store data
  */
 async function fetchAndStore() {
   const epoch = new Date("1970-01-01");
   const now = new Date();
 
-  // 1) Auth + rapport brut
+  // 1) Authenticate and fetch raw data from CellXpert
   const token = await authenticate();
   const raw = await fetchRegistrationReport(
     token,
@@ -308,7 +305,7 @@ async function fetchAndStore() {
     formatDate(now)
   );
 
-  // 2) Validation des enregistrements
+  // 2) Validate records
   const validated = raw
     .map((r) => {
       if (!r.TrackingCode && r.Tracking_Code) r.TrackingCode = r.Tracking_Code;
@@ -324,15 +321,13 @@ async function fetchAndStore() {
     })
     .filter((r) => r !== null);
 
-  // 3) Chargement du cache d’emails (hashés) existants
+  // 3) Load existing data
   const existing = await loadJSON(DATA_FILE, []);
   const emailCache = new Map(existing.map((r) => [r.CustomerId, r.Email]));
 
-  // 4) Fetch des emails + hashing, avec progression
+  // 4) Fetch emails using BACKEND_BASE_URL
   const total = validated.length;
-  console.log(
-    `[fetchAndStore] → début fetchEmail pour ${total} enregistrements`
-  );
+  console.log(`[fetchAndStore] → starting email fetch for ${total} records`);
 
   await Promise.all(
     validated.map(async (rec, i) => {
@@ -340,26 +335,22 @@ async function fetchAndStore() {
       let hash;
 
       if (emailCache.has(id)) {
-        // hash déjà présent
         hash = emailCache.get(id);
       } else {
-        // récupération en clair + hash
         const plain = await fetchEmail(id);
         hash = plain ? pseudonymizeName(plain) : null;
         if (hash) emailCache.set(id, hash);
       }
 
-      // on stocke le hash temporairement
       rec.emailHash = hash;
 
-      // log de progression toutes les 10 et à la fin
       if ((i + 1) % 10 === 0 || i === total - 1) {
         console.log(`[fetchAndStore] … progress: ${i + 1}/${total}`);
       }
     })
   );
 
-  // 5) Fusion avec l’existant et écriture finale
+  // 5) Merge with existing data
   const mapOld = new Map(existing.map((r) => [r.CustomerId, r]));
   validated.forEach((rec) => {
     const newRec = {
@@ -393,9 +384,7 @@ async function fetchAndStore() {
   await saveJSON(DATA_FILE, merged);
   await saveJSON(STATE_FILE, { lastFetch: now.toISOString() });
 
-  console.log(
-    `[fetchAndStore] ✔ terminé, ${merged.length} enregistrements enregistrés`
-  );
+  console.log(`[fetchAndStore] ✔ completed, ${merged.length} records saved`);
 }
 
 async function fetchAndStoreSafe() {
@@ -418,7 +407,7 @@ async function fetchAndStoreSafe() {
   }
 }
 
-// === Express & routes ===
+// === Express Server ===
 const app = express();
 app.use(express.json());
 
@@ -528,7 +517,7 @@ app.get("/meta", async (req, res) => {
   }
 });
 
-// === Démarrage du serveur et du scheduler ===
+// === Startup ===
 if (require.main === module) {
   if (!username || !password || !REPORTS_API_KEY || !AFFILIATE_ID) {
     console.error("Missing environment variables: check .env file");
@@ -538,8 +527,8 @@ if (require.main === module) {
   console.log(`Server starting on port ${PORT}, affiliate ${AFFILIATE_ID}`);
   app.listen(PORT, () => console.log(`API listening on port ${PORT}`));
 
-  // Delay initial fetch to allow DNS/bootstrap
-  fetchAndStoreSafe();
+  // Initial fetch with delay to allow server startup
+  setTimeout(fetchAndStoreSafe, 5000);
   setInterval(fetchAndStoreSafe, PULL_INTERVAL_MIN * 60_000).unref();
 }
 

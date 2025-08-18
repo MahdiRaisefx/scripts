@@ -10,15 +10,18 @@ RUN apt-get update && \
     tini \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npm install -g pm2@latest
+RUN mkdir -p /var/log/app && \
+    chown -R node:node /var/log/app
 
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci --only=production
 
-COPY . .
+COPY server.js ./
+COPY config/*.json ./config/
+
+USER node
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-
-CMD ["pm2-runtime", "ecosystem.config.cjs"]
+CMD ["node", "server.js"]
