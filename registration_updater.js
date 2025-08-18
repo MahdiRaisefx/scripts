@@ -9,7 +9,7 @@ const moment = require("moment");
 const BOARD_CONFIG = require("./config/registrationConfig.json");
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
-const MONDAY_API_TOKEN = process.env.Monday_Token;
+const MONDAY_API_TOKEN = process.env.MONDAY_TOKEN;
 const LEAD_EXPORT_API_KEY = process.env.LEAD_EXPORT_API_KEY;
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL;
 

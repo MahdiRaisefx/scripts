@@ -5,7 +5,7 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-const MONDAY_API_TOKEN = process.env.Monday_Token;
+const MONDAY_API_TOKEN = process.env.MONDAY_TOKEN;
 
 // === CONFIGURATION ===
 const retentionConfigPath = "./config/retentionConfig.json";

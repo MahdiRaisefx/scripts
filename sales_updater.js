@@ -8,7 +8,7 @@ const cron = require("node-cron");
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const LeadExportBaseUrl = process.env.BACKEND_BASE_URL;
 const LeadExportApiKey = process.env.LEAD_EXPORT_API_KEY;
-const MONDAY_API_TOKEN = process.env.Monday_Token;
+const MONDAY_API_TOKEN = process.env.MONDAY_TOKEN;
 const SALES_CONFIG_PATH = "./config/salesUpdaterConfig.json";
 
 async function mondayRequest(query, variables = {}) {
