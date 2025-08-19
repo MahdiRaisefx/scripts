@@ -22,7 +22,6 @@ console.log(`Nc self Board ID: ${NC_SALES_BOARD}`);
 if (!NC_SALES_BOARD) {
   console.error("Nc self board ID not found.");
 }
-// Color log helper
 function colorLog(level, msg) {
   const ts = new Date().toISOString();
   let color = "";
@@ -263,53 +262,50 @@ function getNameFromLead(lead) {
   return String(lead.id);
 }
 
-function formatColumnValue(value, columnType) {
-  if (value === undefined || value === null) return null;
-
-  switch (columnType) {
-    case "email":
-      return { email: value, text: value };
-    case "date": {
-      const d = new Date(value);
-      if (isNaN(d.getTime())) return null;
-      return { date: d.toISOString().split("T")[0] };
-    }
-    case "status":
-      return value;
-    case "numbers":
-      return String(value);
-    case "phone":
-      return { phone: String(value), countryShortName: "US" };
-    default:
-      return String(value);
-  }
-}
-
 async function createMondayLeadItem(lead, boardState, userId, boardId) {
   const displayName = getNameFromLead(lead);
   console.log(`Extracted display name: ${displayName}`);
 
   const kycIndex = getKycStatusIndex(lead.kycPercent, boardState);
 
+  // Build column values object with proper formatting
   const columnValues = {
     [boardState.crmCol]: userId,
     [boardState.nameCol]: displayName,
-    [boardState.emailCol]: formatColumnValue(lead.email, "email"),
-    [boardState.phoneCol]: formatColumnValue(lead.phone, "phone"),
-    [boardState.birthDateCol]: formatColumnValue(lead.birthDate, "date"),
-    [boardState.addressCol]: lead.address ?? null,
-    [boardState.countryCol]: lead.country ?? null,
-    [boardState.regDateCol]: formatColumnValue(lead.registrationDate, "date"),
-    [boardState.kycCol]: formatColumnValue({ index: kycIndex }, "status"),
-    [boardState.totalDeclinedCol]: lead.totalDeclined,
-    [boardState.ftdAmountCol]: lead.ftdAmount,
-    [boardState.ftdDateCol]: formatColumnValue(lead.ftdDate, "date"),
+    [boardState.emailCol]: lead.email
+      ? JSON.stringify({ email: lead.email, text: lead.email })
+      : null,
+    [boardState.phoneCol]: lead.phone
+      ? JSON.stringify({
+          phone: String(lead.phone),
+          countryShortName: lead.countryCode || "US",
+        })
+      : null,
+    [boardState.birthDateCol]: lead.birthDate
+      ? JSON.stringify({
+          date: new Date(lead.birthDate).toISOString().split("T")[0],
+        })
+      : null,
+    [boardState.addressCol]: lead.address || null,
+    [boardState.countryCol]: lead.country || null,
+    [boardState.regDateCol]: lead.registrationDate
+      ? JSON.stringify({
+          date: new Date(lead.registrationDate).toISOString().split("T")[0],
+        })
+      : null,
+    [boardState.kycCol]: JSON.stringify({ index: kycIndex }),
+    [boardState.totalDeclinedCol]: lead.totalDeclined || null,
+    [boardState.ftdAmountCol]: lead.ftdAmount || null,
+    [boardState.ftdDateCol]: lead.ftdDate
+      ? JSON.stringify({
+          date: new Date(lead.ftdDate).toISOString().split("T")[0],
+        })
+      : null,
   };
 
+  // Filter out null values
   const filteredValues = Object.fromEntries(
-    Object.entries(columnValues).filter(
-      ([_, v]) => v !== null && v !== undefined
-    )
+    Object.entries(columnValues).filter(([_, v]) => v !== null)
   );
 
   const mutation = `
@@ -400,7 +396,7 @@ async function processCustomers() {
 
     colorLog("info", "✅ Sync completed successfully");
   } catch (err) {
-    colorLog("error", `❌ Error: ${err.message}`);
+    colorLog("error", `❌ Error: ${err}`);
   } finally {
     isRunning = false;
   }
