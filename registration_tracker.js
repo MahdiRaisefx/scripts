@@ -295,8 +295,12 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.crmCol]: userId,
     [boardState.nameCol]: displayName,
     [boardState.emailCol]: formatColumnValue(lead.email, "email"),
-    [boardState.phoneCol]: formatColumnValue(lead.phone, "phone"),
-    [boardState.birthDateCol]: formatColumnValue(lead.birthDate, "date"),
+    [boardState.phoneCol]: lead.phone
+      ? JSON.stringify({
+          phone: String(lead.phone),
+          countryShortName: lead.countryCode || "US",
+        })[boardState.birthDateCol]
+      : formatColumnValue(lead.birthDate, "date"),
     [boardState.addressCol]: lead.address ?? null,
     [boardState.countryCol]: lead.country ?? null,
     [boardState.regDateCol]: formatColumnValue(lead.registrationDate, "date"),
