@@ -1,12 +1,20 @@
 const axios = require("axios");
 const cron = require("node-cron");
 require("dotenv").config();
+const xml2js = require("xml2js");
 const BOARD_CONFIG = require("./config/registrationConfig.json");
+let affiliateMap = {};
 
 const MONDAY_API_URL = "https://api.monday.com/v2";
 const MONDAY_API_TOKEN = process.env.MONDAY_TOKEN;
 const LEAD_EXPORT_API_KEY = process.env.LEAD_EXPORT_API_KEY;
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL;
+
+const PARTNERS_BASE = "https://partners.raisefx.com/api/admin";
+const PARTNERS_AUTH = {
+  api_username: "JulienT",
+  api_password: ")maz!OHMJ3",
+};
 
 // Find board IDs from config
 const NEW_LEADS_BOARD = BOARD_CONFIG.find(
@@ -22,6 +30,32 @@ console.log(`Nc self Board ID: ${NC_SALES_BOARD}`);
 if (!NC_SALES_BOARD) {
   console.error("Nc self board ID not found.");
 }
+
+async function fetchAffiliateList() {
+  const url = `${PARTNERS_BASE}/?api_username=${encodeURIComponent(
+    PARTNERS_AUTH.api_username
+  )}&api_password=${encodeURIComponent(
+    PARTNERS_AUTH.api_password
+  )}&command=affiliatelist&json=1`;
+  try {
+    const res = await axios.get(url, { timeout: 10000 });
+    const list = res.data || [];
+    affiliateMap = Object.fromEntries(
+      list.map((a) => [
+        String(a.AffiliateID),
+        `${a.FirstName} ${a.LastName}`.trim(),
+      ])
+    );
+    console.log(
+      "info",
+      `Loaded ${Object.keys(affiliateMap).length} affiliates`
+    );
+  } catch (err) {
+    console.log("error", `Fetch affiliates: ${err.message}`);
+    throw err;
+  }
+}
+
 // Color log helper
 function colorLog(level, msg) {
   const ts = new Date().toISOString();
@@ -285,11 +319,31 @@ function formatColumnValue(value, columnType) {
       return String(value);
   }
 }
+async function fetchRegistration(userId) {
+  const url = `${PARTNERS_BASE}/?api_username=${encodeURIComponent(
+    PARTNERS_AUTH.api_username
+  )}&api_password=${encodeURIComponent(
+    PARTNERS_AUTH.api_password
+  )}&command=registrations&userid=raisefx-${userId}`;
+  try {
+    const xml = (await axios.get(url)).data;
+    const trimmed = xml.trim();
+    if (!trimmed || trimmed === "<></>") return {};
+    const parsed = await new xml2js.Parser({
+      explicitArray: false,
+      explicitRoot: false,
+    }).parseStringPromise(trimmed);
+    return parsed.row || {};
+  } catch (err) {
+    console.log("error", `Fetch reg ${userId}: ${err.message}`);
+    return {};
+  }
+}
 
 async function createMondayLeadItem(lead, boardState, userId, boardId) {
   const displayName = getNameFromLead(lead);
   console.log(`Extracted display name: ${displayName}`);
-
+  await fetchAffiliateList();
   let formattedPhone = null;
   if (lead.phone) {
     formattedPhone = lead.phone.replace(/\s+/g, "");
@@ -298,7 +352,10 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     );
   }
   const kycIndex = getKycStatusIndex(lead.kycPercent, boardState);
-
+  const reg = await fetchRegistration(lead.id);
+  const id = reg.affiliateID || "";
+  const name = affiliateMap[id] || `ID ${id}`;
+  const label = id ? `${name} (${id})` : "";
   const columnValues = {
     [boardState.crmCol]: userId,
     [boardState.nameCol]: displayName,
@@ -307,7 +364,6 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
       phone: formattedPhone,
       countryShortName: lead.country || "US",
     },
-
     [boardState.birthDateCol]: formatColumnValue(lead.birthDate, "date"),
     [boardState.addressCol]: lead.address ?? null,
     [boardState.countryCol]: lead.country ?? null,
@@ -316,7 +372,7 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.totalDeclinedCol]: lead.totalDeclined,
     [boardState.ftdAmountCol]: lead.ftdAmount,
     [boardState.ftdDateCol]: formatColumnValue(lead.ftdDate, "date"),
-    [boardState.affiliateNameCol]: lead.affiliateName ?? null,
+    [boardState.affiliateNameCol]: label,
   };
 
   const filteredValues = Object.fromEntries(
