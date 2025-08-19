@@ -34,7 +34,19 @@ services:
       - ./config:/app/config
     restart: unless-stopped
 
+  registration_tracker:
+    build:
+      context: .
+      dockerfile: Dockerfile.registration-tracker
+    env_file: .env
+    volumes:
+      - tracker_logs:/var/log/app
+      - ./data:/app/data
+      - ./config:/app/config
+    restart: unless-stopped
+
 volumes:
   registration_logs:
   sales_logs:
   api_logs:
+  tracker_logs:

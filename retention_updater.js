@@ -199,7 +199,6 @@ async function processBoard({ name, boardId, transactionBoardId }) {
       sinceDateIsoZ = lastCheck;
     } else if (retentionDateCol?.text) {
       // Monday date columns are typically 'YYYY-MM-DD'. Assume start of day UTC.
-      // Safer than new Date('YYYY-MM-DDZ') which is not guaranteed to parse in all runtimes.
       sinceDateIsoZ = `${retentionDateCol.text}T00:00:00Z`;
     } else {
       sinceDateIsoZ = "2025-08-14T00:00:00Z";

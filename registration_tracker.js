@@ -110,6 +110,7 @@ async function getMondayBoardState(boardId) {
     totalDeclinedCol: columns.find((c) => c.title === "Total Declined")?.id,
     ftdAmountCol: columns.find((c) => c.title === "FTD AMOUNT/Challenge")?.id,
     ftdDateCol: columns.find((c) => c.title === "FTD/Challenge Date")?.id,
+    affiliateNameCol: columns.find((c) => c.title === "Affiliate Name")?.id,
   };
 
   return { boardId, items: allItems, columns, ...columnMap };
@@ -278,8 +279,8 @@ function formatColumnValue(value, columnType) {
       return value;
     case "numbers":
       return String(value);
-    case "phone":
-      return { phone: String(value), countryShortName: "US" };
+    // case "phone":
+    //   return { phone: String(value), countryShortName: };
     default:
       return String(value);
   }
@@ -289,18 +290,25 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
   const displayName = getNameFromLead(lead);
   console.log(`Extracted display name: ${displayName}`);
 
+  let formattedPhone = null;
+  if (lead.phone) {
+    formattedPhone = lead.phone.replace(/\s+/g, "");
+    console.log(
+      `Original phone: ${lead.phone}, Formatted phone: ${formattedPhone}`
+    );
+  }
   const kycIndex = getKycStatusIndex(lead.kycPercent, boardState);
 
   const columnValues = {
     [boardState.crmCol]: userId,
     [boardState.nameCol]: displayName,
     [boardState.emailCol]: formatColumnValue(lead.email, "email"),
-    [boardState.phoneCol]: lead.phone
-      ? JSON.stringify({
-          phone: String(lead.phone),
-          countryShortName: lead.countryCode || "US",
-        })[boardState.birthDateCol]
-      : formatColumnValue(lead.birthDate, "date"),
+    [boardState.phoneCol]: {
+      phone: formattedPhone,
+      countryShortName: lead.country || "US",
+    },
+
+    [boardState.birthDateCol]: formatColumnValue(lead.birthDate, "date"),
     [boardState.addressCol]: lead.address ?? null,
     [boardState.countryCol]: lead.country ?? null,
     [boardState.regDateCol]: formatColumnValue(lead.registrationDate, "date"),
@@ -308,6 +316,7 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.totalDeclinedCol]: lead.totalDeclined,
     [boardState.ftdAmountCol]: lead.ftdAmount,
     [boardState.ftdDateCol]: formatColumnValue(lead.ftdDate, "date"),
+    [boardState.affiliateNameCol]: lead.affiliateName ?? null,
   };
 
   const filteredValues = Object.fromEntries(
@@ -348,6 +357,7 @@ async function processCustomers() {
     });
 
     const leads = resp.data;
+
     const now = Date.now();
 
     const assignBoard = await getMondayBoardState(NEW_LEADS_BOARD);
@@ -391,6 +401,7 @@ async function processCustomers() {
           userId,
           targetBoard.boardId
         );
+        console.log("lead affiliate name:", lead.affiliateName);
         colorLog(
           "success",
           `✅ Added user ${userId} (${
