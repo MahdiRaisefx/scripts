@@ -12,8 +12,8 @@ const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL;
 
 const PARTNERS_BASE = "https://partners.raisefx.com/api/admin";
 const PARTNERS_AUTH = {
-  api_username: "JulienT",
-  api_password: ")maz!OHMJ3",
+  api_username: process.env.API_USERNAME,
+  api_password: process.env.API_PASSWORD,
 };
 
 // Find board IDs from config
