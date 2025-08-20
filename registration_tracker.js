@@ -177,6 +177,7 @@ async function getMondayBoardState(boardId) {
     ftdDateCol: columns.find((c) => c.title === "FTD/Challenge Date")?.id,
     affiliateNameCol: columns.find((c) => c.title === "Affiliate Name")?.id,
     triedDepositCol: columns.find((c) => c.title === "Tried Deposit")?.id,
+    BusinessCol: columns.find((c) => c.title === "Business")?.id,
   };
 
   return { boardId, items: allItems, columns, ...columnMap };
@@ -404,7 +405,9 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.ftdAmountCol]: lead.ftdAmount,
     [boardState.ftdDateCol]: formatColumnValue(lead.ftdDate, "date"),
     [boardState.affiliateNameCol]: label,
-    [boardState.triedDepositCol]: lead.triedDeposit,
+    [boardState.triedDepositCol]:
+      lead.triedDeposit === "true" ? "True" : "False",
+    [boardState.BusinessCol]: "RFX",
   };
 
   const filteredValues = Object.fromEntries(
