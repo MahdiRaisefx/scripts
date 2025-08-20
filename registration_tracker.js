@@ -1,5 +1,7 @@
 const axios = require("axios");
 const cron = require("node-cron");
+const fs = require("fs");
+const path = require("path");
 require("dotenv").config();
 const xml2js = require("xml2js");
 const BOARD_CONFIG = require("./config/registrationConfig.json");
@@ -16,6 +18,9 @@ const PARTNERS_AUTH = {
   api_password: process.env.API_PASSWORD,
 };
 
+// File to track last processed registration date
+const LAST_PROCESSED_FILE = path.join(__dirname, "last_processed.json");
+
 // Find board IDs from config
 const NEW_LEADS_BOARD = BOARD_CONFIG.find(
   (b) => b.name === "New Leads"
@@ -29,6 +34,32 @@ const NC_SALES_BOARD = BOARD_CONFIG.find((b) => b.name === "Nc self")?.boardId;
 console.log(`Nc self Board ID: ${NC_SALES_BOARD}`);
 if (!NC_SALES_BOARD) {
   console.error("Nc self board ID not found.");
+}
+
+// Load last processed date
+function loadLastProcessedDate() {
+  try {
+    if (fs.existsSync(LAST_PROCESSED_FILE)) {
+      const data = fs.readFileSync(LAST_PROCESSED_FILE, "utf8");
+      return JSON.parse(data).lastProcessedDate;
+    }
+  } catch (error) {
+    console.log("warn", `Failed to load last processed date: ${error.message}`);
+  }
+  return null;
+}
+
+// Save last processed date
+function saveLastProcessedDate(date) {
+  try {
+    const data = JSON.stringify({ lastProcessedDate: date });
+    fs.writeFileSync(LAST_PROCESSED_FILE, data);
+  } catch (error) {
+    console.log(
+      "error",
+      `Failed to save last processed date: ${error.message}`
+    );
+  }
 }
 
 async function fetchAffiliateList() {
@@ -145,6 +176,7 @@ async function getMondayBoardState(boardId) {
     ftdAmountCol: columns.find((c) => c.title === "FTD AMOUNT/Challenge")?.id,
     ftdDateCol: columns.find((c) => c.title === "FTD/Challenge Date")?.id,
     affiliateNameCol: columns.find((c) => c.title === "Affiliate Name")?.id,
+    triedDepositCol: columns.find((c) => c.title === "Tried Deposit")?.id,
   };
 
   return { boardId, items: allItems, columns, ...columnMap };
@@ -313,12 +345,11 @@ function formatColumnValue(value, columnType) {
       return value;
     case "numbers":
       return String(value);
-    // case "phone":
-    //   return { phone: String(value), countryShortName: };
     default:
       return String(value);
   }
 }
+
 async function fetchRegistration(userId) {
   const url = `${PARTNERS_BASE}/?api_username=${encodeURIComponent(
     PARTNERS_AUTH.api_username
@@ -373,6 +404,7 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.ftdAmountCol]: lead.ftdAmount,
     [boardState.ftdDateCol]: formatColumnValue(lead.ftdDate, "date"),
     [boardState.affiliateNameCol]: label,
+    [boardState.triedDepositCol]: lead.triedDeposit,
   };
 
   const filteredValues = Object.fromEntries(
@@ -406,7 +438,10 @@ async function processCustomers() {
   isRunning = true;
 
   try {
-    const resp = await axios.get(`${BACKEND_BASE_URL}/all`, {
+    const lastProcessedDate = loadLastProcessedDate();
+    const sinceParam = lastProcessedDate ? `?since=${lastProcessedDate}` : "";
+
+    const resp = await axios.get(`${BACKEND_BASE_URL}/all${sinceParam}`, {
       headers: {
         "X-API-KEY": LEAD_EXPORT_API_KEY || "",
       },
@@ -414,35 +449,38 @@ async function processCustomers() {
 
     const leads = resp.data;
 
-    const now = Date.now();
+    if (leads.length === 0) {
+      colorLog("info", "No new registrations since last check");
+      return;
+    }
 
     const assignBoard = await getMondayBoardState(NEW_LEADS_BOARD);
     const ncSelfBoard = await getMondayBoardState(NC_SALES_BOARD);
 
-    const assignCrmSet = new Set(
-      assignBoard.items
-        .map(
-          (item) =>
-            item.column_values.find((c) => c.id === assignBoard.crmCol)?.text
-        )
-        .filter((text) => text !== undefined && text !== null)
-    );
+    // Get all existing user IDs from both boards to avoid duplicates
+    const existingUserIds = new Set();
 
-    const ncSelfCrmSet = new Set(
-      ncSelfBoard.items
-        .map(
-          (item) =>
-            item.column_values.find((c) => c.id === ncSelfBoard.crmCol)?.text
-        )
-        .filter((text) => text !== undefined && text !== null)
-    );
+    [assignBoard, ncSelfBoard].forEach((board) => {
+      board.items.forEach((item) => {
+        const userId = item.column_values.find(
+          (c) => c.id === board.crmCol
+        )?.text;
+        if (userId) {
+          existingUserIds.add(userId);
+        }
+      });
+    });
+
+    let latestDate = lastProcessedDate;
+    let processedCount = 0;
 
     for (const lead of leads) {
       const userId = String(lead.id);
-      const regTime = new Date(lead.registrationDate).getTime();
 
-      if (!isNaN(regTime) && now - regTime < 2 * 60 * 60 * 1000) continue;
-      if (assignCrmSet.has(userId) || ncSelfCrmSet.has(userId)) continue;
+      if (existingUserIds.has(userId)) {
+        colorLog("info", `⏩ Skipping existing user ${userId}`);
+        continue;
+      }
 
       const hasDeposited =
         Boolean(lead.triedDeposit) ||
@@ -464,12 +502,31 @@ async function processCustomers() {
             lead.crmLogin || lead.email || "-"
           }) to '${boardName}'`
         );
+        processedCount++;
+
+        // Update latest date
+        if (
+          lead.registrationDate &&
+          (!latestDate ||
+            new Date(lead.registrationDate) > new Date(latestDate))
+        ) {
+          latestDate = lead.registrationDate;
+        }
       } catch (err) {
         colorLog("error", `❌ Failed to add user ${userId}: ${err.message}`);
       }
     }
 
-    colorLog("info", "✅ Sync completed successfully");
+    // Save the latest processed date
+    if (latestDate && latestDate !== lastProcessedDate) {
+      saveLastProcessedDate(latestDate);
+      colorLog("info", `📅 Updated last processed date to: ${latestDate}`);
+    }
+
+    colorLog(
+      "info",
+      `✅ Sync completed. Processed ${processedCount} new users`
+    );
   } catch (err) {
     colorLog("error", `❌ Error: ${err.message}`);
   } finally {
@@ -480,4 +537,6 @@ async function processCustomers() {
 // ---- Schedule ----
 cron.schedule("*/15 * * * *", processCustomers);
 console.log("🚀 Scheduler started: every 15 minutes");
+
+// Initial run
 processCustomers();
