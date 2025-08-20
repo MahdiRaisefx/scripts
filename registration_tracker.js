@@ -11,7 +11,6 @@ const MONDAY_API_URL = "https://api.monday.com/v2";
 const MONDAY_API_TOKEN = process.env.MONDAY_TOKEN;
 const LEAD_EXPORT_API_KEY = process.env.LEAD_EXPORT_API_KEY;
 const BACKEND_BASE_URL = process.env.BACKEND_BASE_URL;
-
 const PARTNERS_BASE = "https://partners.raisefx.com/api/admin";
 const PARTNERS_AUTH = {
   api_username: process.env.API_USERNAME,
@@ -178,6 +177,7 @@ async function getMondayBoardState(boardId) {
     affiliateNameCol: columns.find((c) => c.title === "Affiliate Name")?.id,
     triedDepositCol: columns.find((c) => c.title === "Tried Deposit")?.id,
     BusinessCol: columns.find((c) => c.title === "Business")?.id,
+    StatusCol: columns.find((c) => c.title === "Status")?.id,
   };
 
   return { boardId, items: allItems, columns, ...columnMap };
@@ -376,6 +376,7 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
   const displayName = getNameFromLead(lead);
   console.log(`Extracted display name: ${displayName}`);
   await fetchAffiliateList();
+
   let formattedPhone = null;
   if (lead.phone) {
     formattedPhone = lead.phone.replace(/\s+/g, "");
@@ -385,7 +386,10 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
   }
   const kycIndex = getKycStatusIndex(lead.kycPercent, boardState);
   const reg = await fetchRegistration(lead.id);
-  const id = reg.affiliateID || "";
+  const rawId = reg.affiliateID;
+
+  const id = rawId === null || rawId === "2287" ? "" : rawId;
+
   const name = affiliateMap[id] || `ID ${id}`;
   const label = id ? `${name} (${id})` : "";
   const columnValues = {
@@ -408,6 +412,7 @@ async function createMondayLeadItem(lead, boardState, userId, boardId) {
     [boardState.triedDepositCol]:
       lead.triedDeposit === "true" ? "True" : "False",
     [boardState.BusinessCol]: "RFX",
+    [boardState.StatusCol]: "FRESH",
   };
 
   const filteredValues = Object.fromEntries(
